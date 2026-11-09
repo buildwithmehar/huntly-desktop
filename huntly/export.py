@@ -74,11 +74,12 @@ async def collect_prospects(
         async with db.execute(sql, params) as cursor:
             rows = [dict(r) for r in await cursor.fetchall()]
 
-    if not include_all:
+    if rows and not include_all:
         # A list for another sequencer is still contact: leave out anyone on
         # compliance.do_not_contact, as the send gate would.
+        suppressed = _do_not_contact(config)
         rows = [r for r in rows
-                if not do_not_contact_match(r.get("email") or "", _do_not_contact(config))]
+                if not do_not_contact_match(r.get("email") or "", suppressed)]
 
     out = []
     for r in rows:

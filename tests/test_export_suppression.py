@@ -52,6 +52,19 @@ async def test_outreach_export_excludes_optouts_without_changing_verification(st
 
 
 @pytest.mark.asyncio
+async def test_outreach_export_reads_suppression_once(state, monkeypatch):
+    from unittest.mock import Mock
+
+    from huntly import export
+
+    suppression = Mock(return_value=["new@example.test"])
+    monkeypatch.setattr(export, "_do_not_contact", suppression)
+    rows = await collect_prospects(state)
+    assert {row["first_name"] for row in rows} == {"Catchall", "Contacted"}
+    suppression.assert_called_once_with(None)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("filters, expected", [
     ({"statuses": ["opted_out"]}, set()),
     ({"statuses": ["new", "opted_out"]}, {"New", "Catchall"}),
@@ -99,7 +112,7 @@ def test_cli_export_respects_suppression_and_raw_mode(tmp_path, monkeypatch, all
 
     state = asyncio.run(_seed_state(tmp_path))
     # Redirect only the CLI's default database selection to real temporary state.
-    monkeypatch.setattr(state_module, "StateManager", lambda: state)
+    monkeypatch.setattr(state_module, "DB_PATH", state.db_path)
     output = tmp_path / "prospects.csv"
     monkeypatch.setattr(sys, "argv", ["huntly", "export", "--out", str(output), *all_flag])
     cli.main()
