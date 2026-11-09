@@ -78,9 +78,12 @@ def test_invalid_setup_does_not_write_files(authed, workspace):
 
 
 @pytest.mark.parametrize("provider", ["gmail", "microsoft"])
-def test_mailbox_connect_uses_saved_credentials(authed, workspace, env, monkeypatch, provider):
+@pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
+def test_mailbox_connect_uses_saved_credentials(authed, workspace, env, monkeypatch, provider, encoding):
     from huntly.integrations import gmail, microsoft
+    from huntly import textio
 
+    monkeypatch.setattr(textio.locale, "getencoding", lambda: "cp1252")
     calls = []
 
     def authorize(client, secondary):
@@ -95,7 +98,7 @@ def test_mailbox_connect_uses_saved_credentials(authed, workspace, env, monkeypa
         monkeypatch.setattr(microsoft, "run_auth_flow", authorize)
         credentials = "M365_CLIENT_ID=example\nM365_TENANT_ID=example-tenant\n"
         expected = ("example", "example-tenant")
-    (env["dir"] / ".env").write_text(credentials, encoding="utf-8")
+    (env["dir"] / ".env").write_text("# Café setup\n" + credentials, encoding=encoding)
     response = authed.post("/api/settings/mail-auth", json={"provider": provider})
     assert response.json() == {"success": True}
     assert calls == [expected]

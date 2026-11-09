@@ -176,3 +176,16 @@ def test_load_env_reads_environment(monkeypatch):
 def test_env_config_rejects_non_string():
     with pytest.raises(ValidationError):
         EnvConfig(instantly_api_key=["not", "a", "string"])
+
+
+def test_load_env_accepts_legacy_windows_encoding(tmp_path, monkeypatch):
+    from huntly import textio
+    from huntly.workspace_home import Home, use_home
+
+    monkeypatch.setattr(textio.locale, "getencoding", lambda: "cp1252")
+    home = Home.for_root(tmp_path)
+    home.env_file.write_text("# Café setup\nSERPER_API_KEY=legacy-key\n", encoding="cp1252")
+    monkeypatch.setenv("SERPER_API_KEY", "old")
+    monkeypatch.delenv("SERPER_API_KEY")
+    with use_home(home):
+        assert load_env().serper_api_key == "legacy-key"

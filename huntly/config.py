@@ -1,5 +1,6 @@
 """Configuration loader for Huntly. Reads huntly.yaml + .env."""
 
+import io
 import logging
 import os
 import re
@@ -899,7 +900,14 @@ def load_env() -> EnvConfig:
     """Load environment variables from .env file."""
     from huntly.workspace_home import current_home
 
-    load_dotenv(current_home().env_file)
+    path = current_home().env_file
+    if path.is_file():
+        try:
+            contents = read_user_text(path)
+        except FileNotFoundError:
+            pass  # The file was removed after the existence check.
+        else:
+            load_dotenv(stream=io.StringIO(contents))
     env = EnvConfig(
         instantly_api_key=os.getenv("INSTANTLY_API_KEY", "").strip(),
         dataforseo_login=os.getenv("DATAFORSEO_LOGIN", "").strip(),

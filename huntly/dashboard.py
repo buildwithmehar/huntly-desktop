@@ -428,7 +428,6 @@ async def save_browser_setup(request: Request):
 @app.post("/api/settings/mail-auth")
 async def connect_setup_mailbox(request: Request):
     require_self_hosted("env_settings")
-    from dotenv import dotenv_values
 
     try:
         data = await request.json()
@@ -441,7 +440,10 @@ async def connect_setup_mailbox(request: Request):
         return _setup_problem("A mailbox sign-in is already open. Finish it in your browser first.", 409)
     if _check_huntly_pid():
         return _setup_problem("Stop Huntly in Controls before connecting a mailbox.", 409)
-    settings = {**os.environ, **dotenv_values(ENV_FILE)}
+    try:
+        settings = {**os.environ, **_read_env_file()}
+    except OSError:
+        return _setup_problem("Huntly could not read the saved mailbox credentials.", 409)
     if provider == "gmail":
         from huntly.integrations.gmail import run_auth_flow
         client = settings.get("GMAIL_CLIENT_ID")
