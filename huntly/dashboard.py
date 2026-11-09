@@ -1933,8 +1933,15 @@ async def get_activity():
 # showing what it will cost first.
 
 _discovery_task: asyncio.Task | None = None
+_discovery_start_lock = asyncio.Lock()
 _discovery_report: dict | None = None
 _discovery_kind = "discover"   # or "profile": reading sites has no stop switch
+
+
+def _discovery_busy() -> bool:
+    return _discovery_start_lock.locked() or (
+        _discovery_task is not None and not _discovery_task.done()
+    )
 
 
 async def _discovery_body(request: Request) -> dict:
@@ -2079,11 +2086,10 @@ async def start_discovery(request: Request):
     Discovery takes minutes, not milliseconds — holding the request open
     would just time out. Progress shows up in the run log.
     """
-    global _discovery_task, _discovery_report
+    global _discovery_task, _discovery_report, _discovery_kind
 
-    if _discovery_task and not _discovery_task.done():
-        return JSONResponse({"success": False, "message": "a run is already going"},
-                            status_code=409)
+    if _discovery_busy():
+        return _setup_problem("a run is already going", 409)
     try:
         from huntly.collectors.discover import PROVIDERS, parse_spend_cap
         from huntly.config import load_config, load_env
@@ -2101,12 +2107,6 @@ async def start_discovery(request: Request):
             return _setup_problem("Add credentials for this source in Discover before running it.")
 
         state = _state()
-        await state.init_db()
-        await state.set_setting("discovery_provider", provider)
-        await state.set_setting("discovery_paused", "")
-
-        global _discovery_kind
-        _discovery_kind = "discover"
 
         async def _go():
             global _discovery_report
@@ -2125,8 +2125,16 @@ async def start_discovery(request: Request):
                 logger.exception("discovery run failed")
                 _discovery_report = {"errors": [str(exc)], "stopped": "failed"}
 
-        _discovery_report = None
-        _discovery_task = asyncio.create_task(_go())
+        # Another request could have started a run while we were reading JSON.
+        if _discovery_busy():
+            return _setup_problem("a run is already going", 409)
+        async with _discovery_start_lock:
+            await state.init_db()
+            await state.set_setting("discovery_provider", provider)
+            await state.set_setting("discovery_paused", "")
+            _discovery_kind = "discover"
+            _discovery_report = None
+            _discovery_task = asyncio.create_task(_go())
         return {"success": True, "queries": len(queries)}
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
@@ -2140,15 +2148,16 @@ async def start_profile():
     """
     global _discovery_task, _discovery_report
 
-    if _discovery_task and not _discovery_task.done():
-        return JSONResponse({"success": False, "message": "a run is already going"},
-                            status_code=409)
+    if _discovery_busy():
+        return _setup_problem("a run is already going", 409)
     try:
         from huntly.pipeline import run_profile_stage
 
         state = _state()
         await state.init_db()
         pending = await state.count_companies_needing_profile()
+        if _discovery_busy():
+            return _setup_problem("a run is already going", 409)
         if not pending:
             return {"success": True, "pending": 0}
 
