@@ -181,7 +181,9 @@ def test_the_dashboard_file_round_trips_and_is_removed_only_by_its_owner(tmp_pat
 
 
 @pytest.mark.parametrize("text", ["", "{", "[]", '{"host":"h","port":0,"instance":"a","pid":1}',
-                                  '{"host":"h","port":"x","instance":"a","pid":1}'])
+                                  '{"host":"h","port":"x","instance":"a","pid":1}',
+                                  '{"host":"h","port":1e999,"instance":"a","pid":1}',
+                                  '{"host":"h","port":5555,"instance":"a","pid":1e999}'])
 def test_a_bad_dashboard_file_is_no_dashboard(tmp_path, text):
     (tmp_path / dashboard_instance.INFO_NAME).write_text(text)
     assert dashboard_instance.read(tmp_path) is None

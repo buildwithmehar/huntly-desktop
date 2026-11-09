@@ -48,7 +48,7 @@ def read(data_dir: Path) -> DashboardInfo | None:
         raw = json.loads((Path(data_dir) / INFO_NAME).read_text(encoding="utf-8"))
         info = DashboardInfo(host=str(raw["host"]), port=int(raw["port"]),
                              instance=str(raw["instance"]), pid=int(raw["pid"]))
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
         return None
     if not (0 < info.port < 65536) or not info.instance or not info.host:
         return None
