@@ -1558,11 +1558,9 @@ async def mark_prospect_sent(prospect_id: str, request: Request):
     from huntly.state import HAND_SENT_REASON, MANUAL_SEND_KEY
     try:
         try:
-            body = await request.json()
+            body = await request.json() if await request.body() else {}
         except ValueError:
-            body = {}
-        if body is None:
-            body = {}
+            return _refuse('expected {"sent": true|false}', 400)
         if not isinstance(body, dict) or not isinstance(body.get("sent", True), bool):
             return _refuse('expected {"sent": true|false}', 400)
         sent = body.get("sent", True)

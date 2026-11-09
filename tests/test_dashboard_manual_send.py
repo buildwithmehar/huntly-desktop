@@ -108,6 +108,15 @@ def test_missing_body_means_sent(client, env):
     assert client.post("/api/prospects/p1/sent").json()["sent"] is True
 
 
+@pytest.mark.parametrize("payload", ["{", "null"])
+def test_invalid_json_does_not_mark_prospect_sent(client, env, payload):
+    _prospect(env, "p1", "a@acme.test")
+    response = client.post("/api/prospects/p1/sent", content=payload,
+                           headers={"Content-Type": "application/json"})
+    assert response.status_code == 400
+    assert _status(env, "prospects", "p1") == "new"
+
+
 # ── Never email someone twice ──
 
 
