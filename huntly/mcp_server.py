@@ -27,7 +27,7 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from huntly import dashboard_instance
-from huntly.dashboard_auth import TokenError, load_or_create_token
+from huntly.dashboard_auth import TokenError, is_loopback, load_or_create_token
 from huntly.paths import PROJECT_ROOT
 from huntly.workspace_home import NotOnHosted
 
@@ -75,13 +75,18 @@ class CoreClient:
 
     def _client(self, base: str) -> httpx.AsyncClient:
         extra = {"transport": self._transport} if self._transport is not None else {}
-        return httpx.AsyncClient(base_url=base, timeout=15.0, **extra)
+        return httpx.AsyncClient(base_url=base, timeout=15.0, trust_env=False, **extra)
 
     async def _connection(self) -> tuple[str, str]:
         info = dashboard_instance.read(self.data_dir)
         if info is None:
             raise CoreUnavailable()
-        base = base_url(info.host, info.port)
+        host = info.host.lower()
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        if not is_loopback(host):
+            raise CoreUnavailable()
+        base = base_url(host, info.port)
         # Is it really that dashboard? /api/instance needs no token, so the
         # agent's token is sent only once the id matches.
         try:

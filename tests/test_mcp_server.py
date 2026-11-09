@@ -87,6 +87,23 @@ async def test_a_different_program_on_the_port_never_gets_the_token(core):
 
 
 @pytest.mark.asyncio
+async def test_mcp_ignores_a_dashboard_address_outside_loopback(core):
+    client, transport, data = core
+    dashboard_instance.write(data, host="example.invalid", port=5555, instance=dash.INSTANCE_ID)
+    out = await _call(_server(client), "stats")
+    assert out == {"ok": False, "message": mcp_server.NOT_RUNNING}
+    assert transport.requests == []
+
+
+@pytest.mark.asyncio
+async def test_loopback_mcp_client_ignores_environment_proxies(tmp_path, monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "invalid://127.0.0.1:9000")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    async with mcp_server.CoreClient(tmp_path)._client(ORIGIN) as http:
+        assert http.trust_env is False
+
+
+@pytest.mark.asyncio
 async def test_no_dashboard_file_means_not_running(core):
     client, transport, data = core
     (data / dashboard_instance.INFO_NAME).unlink()
