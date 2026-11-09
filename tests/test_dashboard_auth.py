@@ -374,6 +374,31 @@ def test_a_port_huntly_cannot_parse_is_refused(authed):
     assert authed.post("/api/settings/env", json={"SMTP_PORT": " 587 "}).json()["success"]
 
 
+@pytest.mark.parametrize("value", ["0", "65536", "²", "9" * 4000],
+                         ids=["zero", "above-limit", "superscript", "very-long"])
+def test_invalid_mailbox_port_is_not_saved(authed, value):
+    response = authed.post("/api/settings/env", json={"SMTP_PORT": value})
+    assert response.status_code == 400
+    assert not dash.ENV_FILE.exists()
+
+
+def test_settings_reads_quoted_and_exported_dotenv_values(authed):
+    dash.ENV_FILE.write_text(
+        "export SMTP_HOST='smtp.example.test' # default\nSMTP_PASSWORD=''\n", encoding="utf-8",
+    )
+    settings = authed.get("/api/settings").json()
+    assert settings["smtp_host"] == "smtp.example.test"
+    assert settings["smtp_password_set"] is False
+
+
+def test_settings_preserves_password_with_spaces_and_comments(authed, monkeypatch):
+    monkeypatch.setenv("SMTP_PASSWORD", "")
+    password = "'secret\\with spaces' # still part of password"
+    response = authed.post("/api/settings/env", json={"SMTP_PASSWORD": password})
+    assert response.json()["success"]
+    assert os.environ["SMTP_PASSWORD"] == password
+
+
 @pytest.mark.parametrize("value", [{"a": 1}, ["x"], True, "x" * 5000, "a\x00b"])
 def test_settings_values_are_validated(authed, value):
     r = authed.post("/api/settings/env", json={"SMTP_HOST": value})

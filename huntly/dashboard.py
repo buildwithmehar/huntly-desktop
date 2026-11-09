@@ -1,6 +1,7 @@
 """Huntly Dashboard — local web UI to set up, control, and monitor Huntly."""
 
 import asyncio
+import io
 import ipaddress
 import json
 import logging
@@ -18,7 +19,7 @@ from pathlib import Path
 
 import aiosqlite
 import yaml
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import (
     HTMLResponse, JSONResponse, PlainTextResponse, Response,
@@ -134,14 +135,10 @@ def _mask_key(key: str) -> str:
 
 def _read_env_file() -> dict[str, str]:
     """Read .env file and return as dict."""
-    env_vars = {}
-    if ENV_FILE.exists():
-        for line in read_user_text(ENV_FILE).splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                env_vars[key.strip()] = value.strip()
-    return env_vars
+    if not ENV_FILE.exists():
+        return {}
+    values = dotenv_values(stream=io.StringIO(read_user_text(ENV_FILE)))
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def _env_key(line: str) -> str:
@@ -171,17 +168,23 @@ def _write_env_file(updates: dict[str, str]):
     lines = (read_user_text(ENV_FILE).splitlines()
              if ENV_FILE.exists() else [])
 
+    # Leading quotes and whitespace before a # have meaning in dotenv.
+    def literal(value: str) -> str:
+        if value.startswith(("'", '"')) or any(char.isspace() for char in value):
+            return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+        return value
+
     out, written = [], set()
     for line in lines:
         key = _env_key(line)
         if key in updates:
             if key in written:
                 continue  # a later duplicate would override the new value
-            out.append(f"{key}={updates[key]}")
+            out.append(f"{key}={literal(updates[key])}")
             written.add(key)
         else:
             out.append(line)
-    out += [f"{k}={v}" for k, v in updates.items() if k not in written]
+    out += [f"{k}={literal(v)}" for k, v in updates.items() if k not in written]
 
     fd, tmp = tempfile.mkstemp(prefix=".env.", suffix=".tmp", dir=str(ENV_FILE.parent))
     try:
@@ -594,15 +597,19 @@ async def save_env_settings(request: Request):
                     return JSONResponse({"success": False, "message": f"{key} must be text."},
                                         status_code=400)
                 value = str(value)
-                # A port Huntly can't parse would stop it starting at all.
-                if key.endswith("_PORT") and value.strip() and not value.strip().isdigit():
-                    return JSONResponse({"success": False, "message": f"{key} must be a number."},
-                                        status_code=400)
                 if len(value) > 4096 or "\x00" in value:
                     return JSONResponse({"success": False, "message": f"{key} is invalid."},
                                         status_code=400)
                 # Strip newlines so a crafted value can't inject extra .env entries
-                updates[key] = value.replace("\n", " ").replace("\r", " ").strip()
+                value = value.replace("\n", " ").replace("\r", " ").strip()
+                if key.endswith("_PORT") and value:
+                    try:
+                        port = int(value) if value.isdecimal() else 0
+                    except ValueError:
+                        port = 0
+                    if not 1 <= port <= 65535:
+                        return _setup_problem(f"{key} must be a whole number from 1 to 65535.")
+                updates[key] = value
         if updates:
             try:
                 _write_env_file(updates)
@@ -1993,13 +2000,9 @@ async def save_discovery_credentials(request: Request):
     if not provider.configured(values):
         return _setup_problem("Enter the credentials from your provider account.")
 
-    # Single-quoted dotenv values preserve spaces, comment characters and quotes.
-    def literal(value):
-        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
-
     async with _env_lock:
         try:
-            _write_env_file({name.upper(): literal(value) for name, value in values.items()})
+            _write_env_file({name.upper(): value for name, value in values.items()})
         except (OSError, ValueError) as exc:
             logger.warning("Discovery credentials could not be saved (%s)", type(exc).__name__)
             return _setup_problem("Huntly could not save the credentials on this computer.", 409)
