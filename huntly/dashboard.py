@@ -691,15 +691,22 @@ async def trulyinbox_other():
 @app.post("/api/settings/test-instantly")
 async def test_instantly(request: Request):
     """Test an Instantly API key."""
+    import httpx
+
     try:
         data = await request.json()
-    except Exception:
+    except ValueError:
         data = {}
-    api_key = str(data.get("api_key", "") or "")
+    api_key = data.get("api_key", "") if isinstance(data, dict) else None
+    if not isinstance(api_key, str):
+        return _setup_problem("Enter the Instantly API key as text.")
+    api_key = api_key.strip()
     if not api_key:
-        return {"success": False, "message": "No API key provided."}
+        return _setup_problem("No API key provided.")
+    if (len(api_key) > 4096 or not api_key.isascii() or not api_key.isprintable()
+            or any(char.isspace() for char in api_key)):
+        return _setup_problem("Enter the Instantly API key as one token.")
     try:
-        import httpx
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.instantly.ai/api/v2/accounts",
@@ -709,8 +716,9 @@ async def test_instantly(request: Request):
                 return {"success": True, "message": "Connected to Instantly."}
             else:
                 return {"success": False, "message": f"API returned {resp.status_code}. Check your key."}
-    except Exception as e:
-        return {"success": False, "message": f"Connection failed: {str(e)}"}
+    except httpx.HTTPError as exc:
+        logger.warning("Instantly connection check failed (%s)", type(exc).__name__)
+        return {"success": False, "message": "Could not connect to Instantly. Try again."}
 
 
 # ── Companies ──

@@ -10,6 +10,20 @@ from huntly.config import load_config
 from tests.test_dashboard_auth import authed, env  # noqa: F401
 
 
+@pytest.mark.parametrize("payload", ["[]", "null", '{"api_key":123}', '{"api_key":"abc\\nxyz"}'])
+def test_instantly_rejects_malformed_credentials(authed, payload, monkeypatch):
+    from unittest.mock import Mock
+
+    import httpx
+
+    connection = Mock(side_effect=AssertionError("Unexpected network request"))
+    monkeypatch.setattr(httpx, "AsyncClient", connection)
+    response = authed.post("/api/settings/test-instantly", content=payload,
+                           headers={"Content-Type": "application/json"})
+    assert response.status_code == 400
+    connection.assert_not_called()
+
+
 @pytest.fixture
 def workspace(env, monkeypatch):
     base = env["dir"] / "huntly.yaml"
