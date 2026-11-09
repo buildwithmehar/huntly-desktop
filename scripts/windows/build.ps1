@@ -13,6 +13,33 @@ function Invoke-Checked {
     }
 }
 
+function Test-WebViewSignature {
+    param([string]$Path)
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    return ($signature.Status -eq 'Valid' -and
+            $signature.SignerCertificate.Subject -match '(^|,\s*)CN=Microsoft Corporation(,|$)')
+}
+
+function Save-WebViewBootstrapper {
+    param([string]$Path)
+    if ((Test-Path -LiteralPath $Path -PathType Leaf) -and (Test-WebViewSignature $Path)) {
+        return
+    }
+
+    $download = Join-Path (Split-Path -Parent $Path) "WebView2Setup-$([guid]::NewGuid()).exe"
+    try {
+        Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $download
+        if (-not (Test-WebViewSignature $download)) {
+            throw 'The WebView2 installer does not have a valid Microsoft signature.'
+        }
+        Move-Item -LiteralPath $download -Destination $Path -Force
+    } finally {
+        if (Test-Path -LiteralPath $download) {
+            Remove-Item -LiteralPath $download
+        }
+    }
+}
+
 Push-Location (Join-Path $PSScriptRoot '..\..')
 $previousBrowserPath = $env:PLAYWRIGHT_BROWSERS_PATH
 try {
@@ -34,6 +61,7 @@ try {
     }
     $buildPython = (Resolve-Path -LiteralPath $buildInterpreter).Path
     Invoke-Checked $buildPython -c $checkPython
+    Save-WebViewBootstrapper 'build/WebView2Setup.exe'
     Invoke-Checked $buildPython -m pip install --disable-pip-version-check -r scripts/windows/requirements-build.txt -e .
 
     $env:PLAYWRIGHT_BROWSERS_PATH = '0'
@@ -41,14 +69,6 @@ try {
     Invoke-Checked $buildPython -m PyInstaller --noconfirm --workpath build/freeze scripts/windows/huntly.spec
     Invoke-Checked $buildPython scripts/windows/copy_licenses.py dist/Huntly
 
-    $bootstrapper = 'build/WebView2Setup.exe'
-    if (-not (Test-Path -LiteralPath $bootstrapper)) {
-        Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrapper
-    }
-    $signature = Get-AuthenticodeSignature -LiteralPath $bootstrapper
-    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation,') {
-        throw 'The WebView2 installer does not have a valid Microsoft signature.'
-    }
     $version = & $buildPython -c 'from importlib.metadata import version; print(version("huntly"))'
     if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') {
         throw 'A three-part release version is required.'
