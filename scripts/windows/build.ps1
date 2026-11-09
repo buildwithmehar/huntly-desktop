@@ -21,15 +21,19 @@ try {
     if (-not $nsis) {
         throw "NSIS compiler not found at '$MakeNsis'. Install NSIS 3 or pass -MakeNsis with the compiler path."
     }
-    if (-not (Test-Path -LiteralPath 'build/windows-venv/Scripts/python.exe')) {
+    $buildInterpreter = 'build/windows-venv/Scripts/python.exe'
+    $checkPython = "import struct, sys; sys.exit(0 if sys.version_info[:2] == (3, 11) and struct.calcsize('P') == 8 else 'Use Python 3.11 x64')"
+    if (-not (Test-Path -LiteralPath $buildInterpreter)) {
         if ($Python -eq 'py') {
+            Invoke-Checked $Python -3.11 -c $checkPython
             Invoke-Checked $Python -3.11 -m venv build/windows-venv
         } else {
+            Invoke-Checked $Python -c $checkPython
             Invoke-Checked $Python -m venv build/windows-venv
         }
     }
-    $buildPython = (Resolve-Path 'build/windows-venv/Scripts/python.exe').Path
-    Invoke-Checked $buildPython -c 'import struct, sys; assert sys.version_info[:2] == (3, 11) and struct.calcsize("P") == 8, "Use Python 3.11 x64"'
+    $buildPython = (Resolve-Path -LiteralPath $buildInterpreter).Path
+    Invoke-Checked $buildPython -c $checkPython
     Invoke-Checked $buildPython -m pip install --disable-pip-version-check -r scripts/windows/requirements-build.txt -e .
 
     $env:PLAYWRIGHT_BROWSERS_PATH = '0'
