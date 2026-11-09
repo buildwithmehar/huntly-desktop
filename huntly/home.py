@@ -9,7 +9,6 @@ undo their changes. A checkout is its own source, so there only data/ is
 created.
 """
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -46,6 +45,16 @@ def seed_home(home: Path, source: Path | None) -> list[str]:
             if dest.exists() or dest.is_symlink():
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dest)
+            contents = src.read_bytes()
+            try:
+                out = dest.open(mode="xb")
+            except FileExistsError:
+                continue
+            try:
+                with out:
+                    out.write(contents)
+            except BaseException:
+                dest.unlink(missing_ok=True)
+                raise
             created.append(rel.as_posix())
     return created

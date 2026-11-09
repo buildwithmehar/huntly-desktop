@@ -150,6 +150,22 @@ def test_seed_into_itself_only_makes_data(tmp_path):
         ["prompts", "skills", "huntly.yaml", ".env.example", "data"])
 
 
+def test_seed_keeps_a_file_created_during_startup(tmp_path, monkeypatch):
+    source = _source(tmp_path / "share")
+    home = tmp_path / "home"
+    target = home / "prompts" / "writer.md"
+    mkdir = Path.mkdir
+
+    def mkdir_with_concurrent_write(path, *args, **kwargs):
+        mkdir(path, *args, **kwargs)
+        if path == target.parent:
+            target.write_text("created by the other startup", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "mkdir", mkdir_with_concurrent_write)
+    assert "prompts/writer.md" not in seed_home(home, source)
+    assert target.read_text(encoding="utf-8") == "created by the other startup"
+
+
 def test_seed_without_a_source_only_makes_data(tmp_path):
     home = tmp_path / "home"
     assert seed_home(home, None) == []
