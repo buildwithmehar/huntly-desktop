@@ -104,6 +104,18 @@ def test_invalid_status_is_rejected(client):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize("payload", [
+    [],
+    {"status": 1, "codes": ["SERP_RANK"]},
+    {"status": "confirmed", "codes": "SERP_RANK"},
+    {"status": "confirmed", "codes": ["SERP_RANK", {}]},
+])
+def test_invalid_signal_batch_is_rejected_before_any_change(client, payload):
+    response = client.post("/api/signals/status", json=payload)
+    assert response.status_code == 400
+    assert client.get("/api/signals").json()["summary"]["confirmed"] == 0
+
+
 # ── Cohorts ──
 
 

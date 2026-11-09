@@ -2647,18 +2647,23 @@ async def set_signals_status(request: Request):
     """Confirm or reject one signal, or a whole category at once."""
     try:
         body = await request.json()
-        status = (body.get("status") or "").strip()
-        codes = body.get("codes") or ([body["code"]] if body.get("code") else [])
-        if status not in ("proposed", "confirmed", "rejected"):
-            return JSONResponse(
-                {"success": False, "message": f"invalid status: {status!r}"},
-                status_code=400,
-            )
-        if not codes:
-            return JSONResponse(
-                {"success": False, "message": "no signal codes given"}, status_code=400
-            )
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        return _setup_problem("Expected a signal status and one or more codes.")
+    status = body.get("status")
+    if not isinstance(status, str) or status.strip() not in ("proposed", "confirmed", "rejected"):
+        return _setup_problem("Choose proposed, confirmed, or rejected.")
+    status = status.strip()
+    codes = body.get("codes")
+    if codes is None or codes == []:
+        codes = [body["code"]] if body.get("code") else []
+    if not isinstance(codes, list) or not codes or any(
+        not isinstance(code, str) or not code.strip() for code in codes
+    ):
+        return _setup_problem("Enter one or more signal codes.")
 
+    try:
         from huntly.signals import seed_signal_catalog
 
         state = _state()
