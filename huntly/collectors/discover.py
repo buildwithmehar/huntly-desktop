@@ -1692,6 +1692,19 @@ def estimate_cost(provider_key: str, queries: list[DiscoveryQuery]) -> float:
     return provider.estimate(queries) if provider else 0.0
 
 
+def parse_spend_cap(value: object) -> float:
+    message = "Enter a finite, non-negative spend cap."
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(message)
+    try:
+        amount = float(value)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(amount) or amount < 0:
+        raise ValueError(message)
+    return amount
+
+
 async def run_discovery(
     state,
     config,
@@ -1710,6 +1723,7 @@ async def run_discovery(
     from huntly.gate import do_not_contact_domain_match
     from huntly.signals import seed_signal_catalog
 
+    max_spend = parse_spend_cap(max_spend)
     provider = PROVIDERS.get(provider_key)
     if provider is None:
         raise ValueError(f"unknown discovery provider: {provider_key!r}")

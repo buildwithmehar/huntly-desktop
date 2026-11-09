@@ -1059,7 +1059,7 @@ function discoverBody() {
     cities: raw ? raw.split(/[;\n]/).map(c => c.trim()).filter(Boolean) : [],
     depth: Number(document.getElementById('disc-depth').value) || 30,
     limit: Number(document.getElementById('disc-limit').value) || 100,
-    max_spend: Number(document.getElementById('disc-cap').value) || 1,
+    max_spend: Number(document.getElementById('disc-cap').value || '1'),
     preset: (document.getElementById('disc-preset') || {}).value || '',
   };
 }

@@ -1937,18 +1937,49 @@ _discovery_report: dict | None = None
 _discovery_kind = "discover"   # or "profile": reading sites has no stop switch
 
 
+async def _discovery_body(request: Request) -> dict:
+    from huntly.collectors.discover import PROVIDERS
+
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise ValueError("Enter valid discovery settings.") from exc
+    provider = body.get("provider") if isinstance(body, dict) else None
+    if not isinstance(provider, str) or provider not in PROVIDERS:
+        raise ValueError("Choose a supported discovery source.")
+    return body
+
+
 def _discovery_queries(body: dict, config):
     from huntly.collectors.discover import build_queries, preset_problem
 
-    preset = str(body.get("preset") or "")
-    problem = preset_problem(preset, str(body.get("provider") or ""), config=config)
+    preset = body.get("preset", "")
+    if not isinstance(preset, str):
+        raise ValueError("Choose a valid discovery preset.")
+    problem = preset_problem(preset, body["provider"], config=config)
     if problem:
         raise ValueError(problem)
-    cities = [c.strip() for c in (body.get("cities") or []) if c.strip()] or None
+    cities = body.get("cities", [])
+    if not isinstance(cities, list) or any(not isinstance(city, str) for city in cities):
+        raise ValueError("Enter cities as a list of names.")
+
+    def query_size(field: str, default: int, maximum: int) -> int:
+        message = f"{field.title()} must be a whole number from 1 to {maximum}."
+        value = body.get(field, default)
+        if type(value) not in (int, str):
+            raise ValueError(message)
+        try:
+            number = int(value)
+        except ValueError as exc:
+            raise ValueError(message) from exc
+        if not 1 <= number <= maximum:
+            raise ValueError(message)
+        return number
+
     return build_queries(
-        config, cities=cities,
-        depth=int(body.get("depth") or 30),
-        limit=int(body.get("limit") or 100),
+        config, cities=[city.strip() for city in cities if city.strip()] or None,
+        depth=query_size("depth", 30, 100),
+        limit=query_size("limit", 100, 1000),
         preset=preset,
     )
 
@@ -2019,25 +2050,23 @@ async def save_discovery_credentials(request: Request):
 async def estimate_discovery(request: Request):
     """Projected spend and the exact query list, before anything is called."""
     try:
-        from huntly.collectors.discover import PROVIDERS, estimate_cost
+        from huntly.collectors.discover import estimate_cost, parse_spend_cap
         from huntly.config import load_config
 
-        body = await request.json()
-        provider = body.get("provider") or ""
-        if provider not in PROVIDERS:
-            return JSONResponse({"error": f"unknown provider {provider!r}"},
-                                status_code=400)
-
         try:
+            body = await _discovery_body(request)
+            provider = body["provider"]
+            parse_spend_cap(body.get("max_spend", 1.0))
             queries = _discovery_queries(body, load_config())
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
+        cost = estimate_cost(provider, queries)
         return {
             "provider": provider,
             "queries": [q.keyword() for q in queries],
             "query_count": len(queries),
-            "estimated_cost": round(estimate_cost(provider, queries), 4),
-            "free": PROVIDERS[provider].estimate(queries) == 0,
+            "estimated_cost": round(cost, 4),
+            "free": cost == 0,
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -2056,25 +2085,20 @@ async def start_discovery(request: Request):
         return JSONResponse({"success": False, "message": "a run is already going"},
                             status_code=409)
     try:
-        from huntly.collectors.discover import PROVIDERS
+        from huntly.collectors.discover import PROVIDERS, parse_spend_cap
         from huntly.config import load_config, load_env
         from huntly.pipeline import run_prospecting
 
-        body = await request.json()
-        provider = body.get("provider") or ""
-        if provider not in PROVIDERS:
-            return JSONResponse({"success": False,
-                                 "message": f"unknown provider {provider!r}"},
-                                status_code=400)
-        if not PROVIDERS[provider].configured(load_env().model_dump()):
-            return _setup_problem("Add credentials for this source in Discover before running it.", 400)
-
-        config = load_config()
         try:
+            body = await _discovery_body(request)
+            provider = body["provider"]
+            max_spend = parse_spend_cap(body.get("max_spend", 1.0))
+            config = load_config()
             queries = _discovery_queries(body, config)
         except ValueError as e:
-            return JSONResponse({"success": False, "message": str(e)}, status_code=400)
-        max_spend = float(body.get("max_spend") or 1.0)
+            return _setup_problem(str(e))
+        if not PROVIDERS[provider].configured(load_env().model_dump()):
+            return _setup_problem("Add credentials for this source in Discover before running it.")
 
         state = _state()
         await state.init_db()

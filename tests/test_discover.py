@@ -178,6 +178,15 @@ async def test_budget_cap_refuses_before_spending(state, config, register):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cap", [float("nan"), float("inf"), -1], ids=["nan", "inf", "negative"])
+async def test_invalid_spend_cap_never_calls_a_provider(state, config, register, cap):
+    fake = register(FakeProvider([[biz(domain="a.com")]], per_query_cost=0.5))
+    with pytest.raises(ValueError, match="spend cap"):
+        await D.run_discovery(state, config, "fake", max_spend=cap)
+    assert fake.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_budget_stops_mid_run_when_actual_exceeds_estimate(state, config, register):
     # Cheap to estimate, expensive in reality — the loop has to notice.
     fake = FakeProvider([[biz(domain=f"{c}.com")] for c in "abcdefghij"],

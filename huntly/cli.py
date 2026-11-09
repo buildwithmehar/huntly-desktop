@@ -611,7 +611,7 @@ def cmd_discover(args):
     from huntly.state import StateManager
     from huntly.config import load_config, load_env
     from huntly.collectors.discover import (
-        PROVIDERS, build_queries, preset_problem, provider_menu, run_discovery,
+        PROVIDERS, build_queries, parse_spend_cap, preset_problem, provider_menu, run_discovery,
     )
 
     async def _discover():
@@ -667,6 +667,12 @@ def cmd_discover(args):
             sys.exit(2)
         queries = build_queries(config, cities=cities,
                                 depth=args.depth, limit=args.limit, preset=preset)
+
+        try:
+            parse_spend_cap(args.max_spend)
+        except ValueError as exc:
+            print(f"\n  {exc}\n")
+            raise SystemExit(2) from None
 
         report = await run_discovery(state, config, args.provider, queries,
                                      max_spend=args.max_spend, dry_run=True)
