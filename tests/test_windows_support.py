@@ -16,6 +16,19 @@ from huntly.claude_runtime import find_claude as real_find_claude  # conftest st
 HUNTLY = Path(__file__).resolve().parent.parent / "huntly"
 
 
+@pytest.mark.parametrize("url", [
+    None, 42, "https://[mail.google.com/mail/", "https://example.com/mail/",
+])
+def test_desktop_refuses_invalid_gmail_draft_links(url, monkeypatch):
+    from huntly import desktop
+
+    def unexpected_open(_url):
+        pytest.fail("An invalid link reached the browser")
+
+    monkeypatch.setattr(desktop.webbrowser, "open", unexpected_open)
+    assert desktop.open_gmail_draft(url) is False
+
+
 def _text_io_without_encoding(tree):
     """open()/read_text()/write_text() calls in text mode with no encoding=."""
     for node in ast.walk(tree):

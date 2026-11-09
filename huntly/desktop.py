@@ -20,7 +20,12 @@ PORT = 5556
 
 def open_gmail_draft(url: str) -> bool:
     """Open a marked manual draft in the browser where Gmail is signed in."""
-    target = urlsplit(url)
+    if not isinstance(url, str):
+        return False
+    try:
+        target = urlsplit(url)
+    except ValueError:
+        return False
     if (target.scheme, target.netloc, target.path) != ("https", "mail.google.com", "/mail/"):
         return False
     return webbrowser.open(url)
