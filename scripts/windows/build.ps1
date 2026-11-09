@@ -16,6 +16,11 @@ function Invoke-Checked {
 Push-Location (Join-Path $PSScriptRoot '..\..')
 $previousBrowserPath = $env:PLAYWRIGHT_BROWSERS_PATH
 try {
+    $nsis = Get-Command -Name $MakeNsis -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $nsis) {
+        throw "NSIS compiler not found at '$MakeNsis'. Install NSIS 3 or pass -MakeNsis with the compiler path."
+    }
     if (-not (Test-Path -LiteralPath 'build/windows-venv/Scripts/python.exe')) {
         if ($Python -eq 'py') {
             Invoke-Checked $Python -3.11 -m venv build/windows-venv
@@ -44,7 +49,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') {
         throw 'A three-part release version is required.'
     }
-    Invoke-Checked $MakeNsis "/DVERSION=$version" scripts/windows/installer.nsi
+    Invoke-Checked $nsis.Source "/DVERSION=$version" scripts/windows/installer.nsi
 
     $sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath 'dist/Huntly-Setup.exe').Hash.ToLowerInvariant()
     "$sha256  Huntly-Setup.exe" | Set-Content -Encoding ascii 'dist/Huntly-Setup.exe.sha256'
